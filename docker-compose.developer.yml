@@ -1,0 +1,127 @@
+version: "3"
+services:
+  nginx:
+    build:
+      context: ./services/nginx
+      args:
+        NGINX_VERSION: nginx:1.19.1-alpine
+        CONTAINER_PACKAGE_URL: mirrors.ustc.edu.cn
+    container_name: nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ..:/var/www/:rw
+      - ./services/nginx/ssl:/ssl:rw
+      - ./services/nginx/conf.d:/etc/nginx/conf.d/:rw
+      - ./services/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./services/nginx/fastcgi-php.conf:/etc/nginx/fastcgi-php.conf:ro
+      - ./services/nginx/fastcgi_params:/etc/nginx/fastcgi_params:ro
+      - ./logs/nginx:/var/log/nginx/:rw
+    environment:
+      TZ: "Asia/Tokyo"
+      APP_ENV: "developer"
+    restart: always
+    networks:
+      - default
+
+  # php7
+  php:
+    build:
+      context: ./services/php
+      args:
+        PHP_VERSION: php:7.4.7-fpm-alpine
+        CONTAINER_PACKAGE_URL: mirrors.ustc.edu.cn
+        PHP_EXTENSIONS: pdo_mysql,mysqli,mbstring,gd,curl,opcache,apcu,zip,opcache,redis,swoole
+        TZ: "Asia/Tokyo"
+    container_name: php
+    ports:
+      - "9001:9001"
+    expose:
+      - 9000 # php-fpm
+      - 9001 # supervisor
+      - 5200 # swoole laravels
+    #extra_hosts:
+    #  - "www.site1.com:172.17.0.1"
+    volumes:
+      - ..:/var/www/:rw
+      - ./services/php/php.ini:/usr/local/etc/php/php.ini:ro
+      - ./services/php/php-fpm.conf:/usr/local/etc/php-fpm.d/www.conf:rw
+      - ./logs/php:/var/log/php
+      - ./data/composer:/tmp/composer
+      # supervisor 文件映射配置
+      - ./services/supervisor/supervisord.conf:/etc/supervisord.conf:rw
+      - ./services/supervisor/conf.d:/etc/supervisor/conf.d:rw
+      - ./logs/supervisor:/var/log/supervisor:rw
+    restart: always
+    command:
+      - /bin/sh
+      - -c
+      - |
+        supervisord -n -c /etc/supervisord.conf
+    cap_add:
+      - SYS_PTRACE
+    environment:
+      APP_ENV: "developer"
+    networks:
+      - default
+
+  mysql:
+    image: mysql:5.7
+    container_name: mysql
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./services/mysql/mysql.cnf:/etc/mysql/conf.d/mysql.cnf:ro
+      - ../docker/data/mysql:/var/lib/mysql/:rw
+    restart: always
+    networks:
+      - default
+    environment:
+      MYSQL_ROOT_PASSWORD: "root"
+      TZ: "Asia/Tokyo"
+      APP_ENV: "developer"
+
+  redis:
+    image: redis:5.0.3-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./services/redis/redis.conf:/etc/redis.conf:ro
+      - ../docker/data/redis:/data/:rw
+    restart: always
+    entrypoint: ["redis-server", "/etc/redis.conf"]
+    environment:
+      TZ: "Asia/Tokyo"
+      APP_ENV: "developer"
+    networks:
+      - default
+
+#  supervisor:
+#    build:
+#      context: ./services/supervisor
+#      args:
+#        ALPINE_VERSION: alpine:3.12
+#        TZ: "Asia/Tokyo"
+#        CONTAINER_PACKAGE_URL: mirrors.ustc.edu.cn
+#    container_name: supervisor
+#    ports:
+#      - "9001:9001"
+#    volumes:
+#      - ..:/www/:rw
+#      - ./logs/supervisor:/var/log/supervisor/:rw
+#      - ./services/supervisor/conf.d/:/etc/supervisor/conf.d/:rw
+#      - ./services/supervisor/supervisord.conf:/etc/supervisor/supervisord.conf:ro
+#    command:
+#      - /bin/sh
+#      - -c
+#      - |
+#        supervisord -n -c /etc/supervisor/supervisord.conf
+#    restart: always
+#    cap_add:
+#      - SYS_PTRACE
+#    networks:
+#      - default
+
+networks:
+  default:
